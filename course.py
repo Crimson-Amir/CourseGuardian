@@ -76,7 +76,6 @@ async def view_course(update, context):
             string_price = 'رایگان برای شما'
             keyboard = [[InlineKeyboardButton("دریافت رایگان دوره", callback_data=f"send_course_to_user_{course_id}_{price}")]]
 
-
         if get_course_detail[3] != 0:
             referral_requirement_text = (f'\n\n{get_course_detail[3]} نفر را به ربات دعوت کنید تا این دوره را رایگان دریافت کنید!'
                                          f'\nتعداد دعوت های شما: {get_course_detail[6]}')

@@ -92,10 +92,10 @@ async def get_course_description(update, context):
 async def get_cover(update, context):
     chat_id = update.effective_chat.id
 
-    if hasattr(update.message, 'photo'):
+    if update.message.photo:
         file_id = update.message.photo[-1].file_id
         course_cover_type = 'photo'
-    elif hasattr(update.message, 'video'):
+    elif update.message.video:
         file_id = update.message.video.file_id
         course_cover_type = 'video'
     else:
