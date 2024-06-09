@@ -105,7 +105,8 @@ async def view_course(update, context):
 
         except Exception as e:
             print(e)
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='html')
+            await context.bot.send_message(chat_id, text='مشکلی در ارسال کاور وجود داشت!\n\n' + text, parse_mode='html', reply_markup=InlineKeyboardMarkup(keyboard))
+            return
     else:
         await query.edit_message_text('<b>• این دوره در دسترس نیست!</b>', parse_mode='html')
 
@@ -188,7 +189,7 @@ async def send_course_to_user(update, context):
         elif course_type == 'document':
             await context.bot.send_document(chat_id, document=get_course_detail[1].tobytes())
 
-        elif course_type == 'image':
+        elif course_type == 'photo':
             await context.bot.send_photo(chat_id, photo=get_course_detail[1].tobytes())
 
         elif course_type == 'video':
@@ -197,10 +198,8 @@ async def send_course_to_user(update, context):
         elif course_type == 'voice':
             await context.bot.send_voice(chat_id, voice=get_course_detail[1].tobytes())
 
-        keyboard = [[InlineKeyboardButton("صفحه اصلی", callback_data='callback_main_menu')]]
-
         text = 'دوره برای شما فرستاده شد!'
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='html')
+        await query.answer(text)
     else:
         await query.edit_message_text('<b>• این دوره در دسترس نیست!</b>', parse_mode='html')
 

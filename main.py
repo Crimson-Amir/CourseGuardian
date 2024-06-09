@@ -6,7 +6,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, ChatJoinRequestHandler)
 from private import telegram_bot_token, ADMIN_CHAT_IDs, bot_username, sponser_channel_ids
 from user.userManager import IsUserExist, RegisterUser
-from admin_panel import admin_page, add_admin, add_course_page, cource_handler
+from admin_panel import (admin_page, add_admin, add_course_page, cource_handler, update_course_handler,
+                         admin_change, admin_remove_course, admin_manage_course, admin_all_course)
 from wallet.wallet_telegram import wallet_page, add_credit_to_wallet, charge_wallet_handler
 from course import send_course_to_user, view_course, course_page, join_request, buy_course
 
@@ -64,9 +65,7 @@ async def referral_page(update, context):
     query = update.callback_query
     text = '<b>شما تا به حال کسی را به ربات دعوت نکرده اید!\n\nاز طریق لینک زیر دوستانتان را به ربات دعوت کنید:</b>'
 
-    # is_user_exist = await user_manager.execute(IsUserExist, key='entered_with_refral_link', value=user_detail.id,
-    #                                            column='first_name,last_name,user_name,registration_date')
-    is_user_exist = database_pool.execute('query', {'query': f'SELECT COUNT(userID) FROM UserDetail WHERE entered_with_refral_link = {user_detail.id}'})
+    is_user_exist = database_pool.execute('query', {'query': f'SELECT number_of_invitations FROM UserDetail WHERE userID = {user_detail.id}'})
     get_user_referral_code = await user_manager.execute(IsUserExist, value=user_detail.id, column='referral_link')
 
     if is_user_exist:
@@ -106,8 +105,14 @@ if __name__ == '__main__':
     # Admin Handler
     application.add_handler(CallbackQueryHandler(add_course_page, pattern='admin_add_course_page'))
     application.add_handler(cource_handler)
+    application.add_handler(update_course_handler)
     application.add_handler(CommandHandler('admin', admin_page))
     application.add_handler(CommandHandler('add_admin', add_admin))
+    application.add_handler(CallbackQueryHandler(admin_remove_course, pattern='admin_remove_course_'))
+    application.add_handler(CallbackQueryHandler(admin_change, pattern='admin_change'))
+    application.add_handler(CallbackQueryHandler(admin_manage_course, pattern='admin_manage_course_'))
+    application.add_handler(CallbackQueryHandler(admin_all_course, pattern='admin_course_manag'))
+    application.add_handler(CallbackQueryHandler(admin_page, pattern='admin'))
 
     application.run_polling()
 

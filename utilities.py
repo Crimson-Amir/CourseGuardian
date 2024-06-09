@@ -27,20 +27,20 @@ def report_problem_to_admin(msg: str):
 
 def handle_error(func):
     @functools.wraps(func)
-    def warpper(update, context):
+    async def warpper(update, context):
         user_detail = update.effective_chat
         try:
-            return func(update, context)
+            return await func(update, context)
         except Exception as e:
             err = ("🔴 Report Problem in Bot\n\n"
-                    f"Something Went Wrong In <b>{func.__name__}</b> Section."
-                    f"\nUser ID: {user_detail.id}"
-                    f"\nError Type: {type(e).__name__}"
-                    f"\nError Reason:\n{e}")
+                   f"Something Went Wrong In <b>{func.__name__}</b> Section."
+                   f"\nUser ID: {user_detail.id}"
+                   f"\nError Type: {type(e).__name__}"
+                   f"\nError Reason:\n{e}")
 
             print(err)
             report_problem_to_admin(err)
-            context.bot.send_message(text='متاسفانه مشکلی وجود داشت، گزارش به ادمین ها ارسال شد!', chat_id=user_detail.id)
+            await context.bot.send_message(text='متاسفانه مشکلی وجود داشت، گزارش به ادمین ها ارسال شد!', chat_id=user_detail.id, parse_mode='html')
     return warpper
 
 
