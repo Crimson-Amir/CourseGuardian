@@ -1,4 +1,28 @@
-from utilities import report_problem_to_admin_witout_context
+import requests
+from private import telegram_bot_url, ADMIN_CHAT_IDs
+
+
+async def report_problem(func_name, error, side, extra_message=None):
+    text = (f"🔴 BOT Report Problem [{side}]\n\n"
+            f"\nFunc Name: {func_name}"
+            f"\nError Type: {type(error).__name__}"
+            f"\nError Reason:\n{error}"
+            f"\nExtra Message:\n{extra_message}")
+
+    requests.post(url=telegram_bot_url, data={'chat_id': ADMIN_CHAT_IDs[0], 'text': text})
+
+
+async def report_problem_to_admin_witout_context(text, chat_id, error, detail=None):
+    text = ("🔴 Report Problem in Bot\n\n"
+            f"Something Went Wrong In {text} Section."
+            f"\nUser ID: {chat_id}"
+            f"\nError Type: {type(error).__name__}"
+            f"\nError Reason:\n{error}")
+
+    text += f"\nDetail:\n {detail}" if detail else ''
+    requests.post(url=telegram_bot_url, data={'chat_id': ADMIN_CHAT_IDs[0], 'text': text})
+    print(f'* REPORT TO ADMIN SUCCESS: ERR: {error}')
+
 
 class WalletManage:
     def __init__(self, wallet_table, wallet_column, db_pool, user_id_identifier):
@@ -19,8 +43,8 @@ class WalletManage:
     async def add_to_wallet(self, user_id, credit):
         try:
             credit_all = int(await self.get_wallet_credit(user_id) + credit)
-            get_credit = self.db_pool.execute('transaction', [{{'query': f'UPDATE {self.WALLET_TABALE} SET {self.WALLET_COLUMN} = {credit_all} WHERE {self.USER_ID} = {user_id} RETURNING *',
-                                                                'params': None}}])
+            get_credit = self.db_pool.execute('transaction', [{'query': f'UPDATE {self.WALLET_TABALE} SET {self.WALLET_COLUMN} = {credit_all} WHERE {self.USER_ID} = {user_id} RETURNING *',
+                                                                'params': None}])
             return get_credit
 
         except Exception as e:
@@ -37,8 +61,8 @@ class WalletManage:
             return None
 
     def set_credit(self, user_id, credit):
-        get_credit = self.db_pool.execute('transaction', [{{'query': f'UPDATE {self.WALLET_TABALE} SET {self.WALLET_COLUMN} = {credit} WHERE {self.USER_ID} = {user_id} RETURNING *',
-                                                            'params': None}}])
+        get_credit = self.db_pool.execute('transaction', [{'query': f'UPDATE {self.WALLET_TABALE} SET {self.WALLET_COLUMN} = {credit} WHERE {self.USER_ID} = {user_id} RETURNING *',
+                                                            'params': None}])
         return get_credit
 
 # a = WalletManage('User', 'wallet', 'chat_id')

@@ -1,15 +1,14 @@
 import requests
-
 from private import telegram_bot_url, ADMIN_CHAT_IDs, sponser_channel_ids, database_detail
 import functools
 import arrow
 from datetime import datetime
-import aiohttp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from posgres_manager import Client
 from user.userManager import UserClient
 import traceback
 from telegram.ext import ConversationHandler
+from wallet.wallet_core import WalletManage
 
 
 main_page_keyboard = [
@@ -19,7 +18,7 @@ main_page_keyboard = [
 ]
 database_pool = Client(**database_detail)
 user_manager = UserClient(database_pool)
-
+wallet_manager = WalletManage('UserDetail', 'credit', database_pool, 'userID')
 
 def report_problem_to_admin(msg: str):
     return requests.post(url=telegram_bot_url, data={'chat_id': ADMIN_CHAT_IDs[0], 'text': msg})
@@ -132,3 +131,12 @@ async def report_problem_to_admin_witout_context(text, chat_id, error, detail=No
     requests.post(url=telegram_bot_url, data={'chat_id': ADMIN_CHAT_IDs[0], 'text': text})
     print(f'* REPORT TO ADMIN SUCCESS: ERR: {error}')
 
+
+def handle_telegram_exceptions_without_user_side(func):
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            await report_problem(func.__name__, e, 'Telgram Func', extra_message=traceback.format_exc())
+
+    return wrapper

@@ -2,11 +2,9 @@ from datetime import datetime, timedelta
 
 import telegram.error
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from wallet.wallet_core import WalletManage
-from utilities import check_join_in_channel, handle_error, database_pool
+from utilities import check_join_in_channel, handle_error, database_pool, wallet_manager
 
 # accept_join_request = {}
-wallet_manager = WalletManage('UserDetail', 'credit', database_pool, 'userID')
 
 @handle_error
 @check_join_in_channel

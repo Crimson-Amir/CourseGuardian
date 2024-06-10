@@ -75,7 +75,7 @@ list_of_commands = [
 
     CREATE TABLE IF NOT EXISTS Invoice (
     invoiceID SERIAL PRIMARY KEY,
-    user_ID BIGINT NOT NULL,
+    userID BIGINT NOT NULL,
     course_ID BIGINT,
     amount BIGINT NOT NULL,
     discount BIGINT DEFAULT 0,
@@ -83,7 +83,7 @@ list_of_commands = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     payment_method VARCHAR(50),
     payment_for VARCHAR(50),
-    CONSTRAINT fk_user FOREIGN KEY (user_ID) REFERENCES UserDetail(userID) ON DELETE CASCADE,
+    CONSTRAINT fk_user FOREIGN KEY (userID) REFERENCES UserDetail(userID) ON DELETE CASCADE,
     CONSTRAINT fk_course FOREIGN KEY (course_ID) REFERENCES Course(courseID) ON DELETE CASCADE
 );""", 'params': None},
 

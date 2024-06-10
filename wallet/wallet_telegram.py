@@ -1,11 +1,15 @@
 import telegram.error
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from utilities import check_join_in_channel, user_manager, handle_error, handle_telegram_conversetion_exceptions, database_pool
+from utilities import (check_join_in_channel, user_manager, handle_error, handle_telegram_conversetion_exceptions,
+                       database_pool, wallet_manager, handle_telegram_exceptions_without_user_side)
 from user.userManager import IsUserExist
-from private import minimum_price_allowed_to_charge_wallet, maximum_price_allowed_to_charge_wallet
+from private import minimum_price_allowed_to_charge_wallet, maximum_price_allowed_to_charge_wallet, card_detail, ADMIN_CHAT_IDs
 from telegram.ext import ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 
+
 GET_PRICE = 0
+GET_EVIDENCE_CREDIT = 0
+factor_time_in_sec = 600
 
 @handle_error
 @check_join_in_channel
@@ -63,12 +67,15 @@ async def get_price_and_process(update, context):
         await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='html')
         return
 
-    database_pool.execute('transaction', [
-        {'query': 'INSERT INTO Invoice (user_ID, amount, payment_for, payment_status) VALUES (%s, %s, %s, %s) RETURNING *',
-         'params': (chat_id, get_price, 'charge_wallet', 'unpay')}])
+    invoice_id = database_pool.execute('transaction', [
+        {'query': 'INSERT INTO Invoice (userID, amount, payment_for, payment_status) VALUES (%s, %s, %s, %s) RETURNING invoiceID',
+         'params': (chat_id, get_price, 'charge_wallet', 'unpay')}])[0][0][0]
 
-    keyboard = [[InlineKeyboardButton('درگاه پرداخت پی استار', callback_data='not_ready_yet')],
-        [InlineKeyboardButton('صفحه اصلی', callback_data='send_main_menu')]]
+    context.user_data['price'] = get_price
+    context.user_data['invoice_id'] = invoice_id
+
+    keyboard = [[InlineKeyboardButton('کارت به کارت', callback_data=f'pay_by_card_for_credit_{get_price}_{invoice_id}')],
+                [InlineKeyboardButton('صفحه اصلی', callback_data='send_main_menu')]]
 
     await context.bot.send_message(chat_id=chat_id, text=f"<b>بسیار خب، لطفا روش پرداخت را انتخاب کنید:\n\nمبلغ: {get_price:,}</b>",
                                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='html')
@@ -85,3 +92,117 @@ charge_wallet_handler = ConversationHandler(
     allow_reentry=True,
     conversation_timeout=1500,
 )
+
+
+@handle_telegram_conversetion_exceptions
+async def pay_by_card_for_credit(update, context):
+    query = update.callback_query
+    price = context.user_data['price']
+    keyboard = [[InlineKeyboardButton("صفحه اصلی ⤶", callback_data="send_main_menu")]]
+
+    text = (f"\n\nمدت اعتبار فاکتور: {factor_time_in_sec / 60} دقیقه"
+            f"\n*قیمت*: `{price:,}`* تومان *"
+            f"\n\n*• لطفا مبلغ رو به شماره‌حساب زیر واریز کنید و اسکرین‌شات یا شماره‌پیگیری رو بعد از همین پیام ارسال کنید، اطمینان حاصل کنید ربات درخواست رو ثبت کنه.*"
+            f"\n\n{card_detail}"
+            f"\n\n*• بعد از تایید شدن پرداخت، سرویس برای شما ارسال میشه، زمان تقریبی 5 دقیقه الی 3 ساعت.*")
+
+    await context.bot.send_message(chat_id=query.message.chat_id, text=text, parse_mode='markdown',
+                                   reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.answer('فاکتور برای شما ارسال شد.')
+    return GET_EVIDENCE_CREDIT
+
+
+@handle_telegram_conversetion_exceptions
+async def pay_by_card_for_credit_admin(update, context):
+    user = update.message.from_user
+    price = context.user_data['price']
+    invoice_id = context.user_data['invoice_id']
+
+    keyboard = [[InlineKeyboardButton("قبول کردن ✅", callback_data=f"accept_card_pay_credit_{invoice_id}"),
+                 InlineKeyboardButton("رد کردن ❌", callback_data=f"refuse_card_pay_credit_{invoice_id}")],
+                [InlineKeyboardButton("پنهان کردن دکمه ها", callback_data=f"hide_buttons")]]
+
+    text_ = f'<b>درخواست شما با موفقیت ثبت شد✅\nنتیجه از طریق همین ربات بهتون اعلام میشه</b>'
+    text = "درخواست کارت به کارت را بررسی کنید:\n\n"
+
+    text += f"نام: {user['first_name']}\nیوزرنیم: @{user['username']}\nچت آیدی: {user['id']}\n\n"
+
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+        text += f"کپشن: {update.message.caption}" or 'بدون کپشن!'
+        text += f"\n\nقیمت: {price:,} T"
+        await context.bot.send_photo(chat_id=ADMIN_CHAT_IDs[0], photo=file_id, caption=text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(text_, parse_mode='html')
+    elif update.message.text:
+        text += f"متن: {update.message.text}\n\nقیمت: {price:,} T"
+        await context.bot.send_message(chat_id=ADMIN_CHAT_IDs[0], text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(text_, parse_mode='html')
+    else:
+        await update.message.reply_text('مشکلی وجود داره!')
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+credit_charge = ConversationHandler(
+    entry_points=[CallbackQueryHandler(pay_by_card_for_credit, pattern=r'pay_by_card_for_credit_\d+')],
+    states={
+        GET_EVIDENCE_CREDIT: [MessageHandler(filters.ALL, pay_by_card_for_credit_admin)]
+    },
+    fallbacks=[],
+    conversation_timeout=1000,
+    per_chat=True,
+    allow_reentry=True
+)
+
+@handle_telegram_exceptions_without_user_side
+async def add_credit_to_wallet_func(context, invoice_id):
+    get_invoice = database_pool.execute('query', {'query': f'SELECT userID,amount FROM Invoice WHERE invoiceID = %s', 'params': (invoice_id,)})
+
+    if get_invoice:
+        add_to_wallet = await wallet_manager.add_to_wallet(get_invoice[0][0], get_invoice[0][1])
+        if not add_to_wallet:
+            raise ValueError(f'problem in add credit to wallet')
+        finish_invoice = database_pool.execute('transaction', [{'query': 'UPDATE Invoice SET payment_status = %s, payment_method = %s WHERE invoiceID = %s RETURNING userID,amount',
+                                                                         'params': ("pay", "card_to_card", invoice_id)}])[0]
+        await context.bot.send_message(ADMIN_CHAT_IDs[0], '🟢 WALLET OPERATOIN SUCCESSFULL')
+        return finish_invoice
+
+    raise ValueError(f'there is no invoice with {invoice_id} id')
+
+
+@handle_error
+async def apply_card_pay_credit(update, context):
+    query = update.callback_query
+
+    if 'accept_card_pay_credit_' in query.data or 'refuse_card_pay_credit_' in query.data:
+        data = query.data.replace('card_pay_credit_', '').split('_')
+        status = data[0]
+        invoice_id = data[1]
+        keyboard = [[InlineKeyboardButton("بله", callback_data=f"ok_card_pay_credit_{status}_{invoice_id}")],
+                    [InlineKeyboardButton("خیر", callback_data=f"cancel_pay")]]
+        await query.answer('لطفا تایید کنید!')
+        await context.bot.send_message(text='از تایید تراکنش مطمئنید؟', reply_markup=InlineKeyboardMarkup(keyboard), chat_id=ADMIN_CHAT_IDs[0])
+
+    elif 'ok_card_pay_credit_accept_' in query.data:
+        invoice_id = int(query.data.replace('ok_card_pay_credit_accept_', ''))
+        invoice_detail = await add_credit_to_wallet_func(context, invoice_id)
+
+        await context.bot.send_message(text=f'مبلغ {invoice_detail[0][1]} تومن با موفقیت به کیف پول شما اضافه شد ✅', chat_id=invoice_detail[0][0])
+        await query.answer('Done ✅')
+        await query.delete_message()
+
+    elif 'ok_card_pay_credit_refuse_' in query.data:
+        invoice_id = int(query.data.replace('ok_card_pay_credit_refuse_', ''))
+        get_invoice = database_pool.execute('query', {'query': f'SELECT userID FROM Invoice WHERE invoiceID = {invoice_id}'})[0]
+
+        await context.bot.send_message(
+            text=f'درخواست شما برای واریز به کیف پول پذیرفته نشد❌',
+            chat_id=get_invoice[0])
+
+        await query.answer('Done ✅')
+        await query.delete_message()
+
+    elif 'cancel_pay' in query.data:
+        query.answer('Done ✅')
+        query.delete_message()

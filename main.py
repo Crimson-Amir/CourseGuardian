@@ -8,7 +8,7 @@ from private import telegram_bot_token, ADMIN_CHAT_IDs, bot_username, sponser_ch
 from user.userManager import IsUserExist, RegisterUser
 from admin_panel import (admin_page, add_admin, add_course_page, cource_handler, update_course_handler,
                          admin_change, admin_remove_course, admin_manage_course, admin_all_course)
-from wallet.wallet_telegram import wallet_page, add_credit_to_wallet, charge_wallet_handler
+from wallet.wallet_telegram import wallet_page, add_credit_to_wallet, charge_wallet_handler, credit_charge, apply_card_pay_credit
 from course import send_course_to_user, view_course, course_page, join_request, buy_course
 
 
@@ -91,7 +91,14 @@ if __name__ == '__main__':
     application.add_handler(CallbackQueryHandler(send_main_menu, pattern='send_main_menu'))
 
     # wallet Handler
+    application.add_handler(CallbackQueryHandler(apply_card_pay_credit, pattern='accept_card_pay_credit_'))
+    application.add_handler(CallbackQueryHandler(apply_card_pay_credit, pattern='refuse_card_pay_credit_'))
+    application.add_handler(CallbackQueryHandler(apply_card_pay_credit, pattern='ok_card_pay_credit_'))
+    application.add_handler(CallbackQueryHandler(apply_card_pay_credit, pattern='ok_card_pay_credit_accept_'))
+    application.add_handler(CallbackQueryHandler(apply_card_pay_credit, pattern='ok_card_pay_credit_refuse_'))
+
     application.add_handler(charge_wallet_handler)
+    application.add_handler(credit_charge)
     application.add_handler(CallbackQueryHandler(wallet_page, pattern='wallet_page'))
     application.add_handler(CallbackQueryHandler(add_credit_to_wallet, pattern='add_credit_to_wallet'))
 
