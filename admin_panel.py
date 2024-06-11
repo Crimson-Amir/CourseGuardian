@@ -1,3 +1,6 @@
+import hashlib
+import uuid
+from datetime import datetime
 from utilities import database_pool, handle_telegram_conversetion_exceptions
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import psycopg2
@@ -8,12 +11,14 @@ confirm_remove_course = {}
 
 admin_page_keyboard = [
     [InlineKeyboardButton('اضافه کردن دوره', callback_data='admin_add_course_page')],
-    [InlineKeyboardButton('مدیریت دوره ها', callback_data='admin_course_manag')]
+    [InlineKeyboardButton('مدیریت دوره ها', callback_data='admin_course_manag')],
+    [InlineKeyboardButton('اضافه کردن کد تخفیف', callback_data='admin_add_discount_code')]
 ]
 
 (GET_TITLE, GET_DESCRIPTION, GET_COVER, GET_DISCOUNT_PERCENT_PER_INVITE, GET_DISCOUNT, GET_NUMBER_OF_REFERRAL_TO_BE_FREE,
  GET_PRICE, GET_STATUS, GET_CONTENT, PRIVATE_CHANNEL_CHAT_ID) = range(10)
 EDIT_COURSE = 0
+ADD_DISCOUNT_CODE_VALID_FOR_USER, ADD_DISCOUNT_CODE_CREDIT, ADD_DISCOUNT_CODE_VALID_UNTIL = range(3)
 
 def check_is_admin(func):
     async def wrapper(update, context):
@@ -271,17 +276,17 @@ async def admin_manage_course(update, context):
         keyboard = [
             [InlineKeyboardButton("دریافت دوره", callback_data=f"send_course_to_user_{course_id}_0")],
             [InlineKeyboardButton("تغییر تایتل", callback_data=f"admin_change&title&{course_id}"),
-            InlineKeyboardButton("تغییر توضیحات", callback_data=f"admin_change&description&{course_id}")],
+             InlineKeyboardButton("تغییر توضیحات", callback_data=f"admin_change&description&{course_id}")],
             [InlineKeyboardButton("تغییر رفرال موردنیاز برای دریافت رایگان", callback_data=f"admin_change&referral_requirement&{course_id}")],
             [InlineKeyboardButton("تغییر قیمت", callback_data=f"admin_change&price&{course_id}"),
-            InlineKeyboardButton("تغییر نوع کاور", callback_data=f"admin_change&cover_type&{course_id}")],
+             InlineKeyboardButton("تغییر نوع کاور", callback_data=f"admin_change&cover_type&{course_id}")],
             [InlineKeyboardButton("تغییر کاور", callback_data=f"admin_change&cover&{course_id}")],
             [InlineKeyboardButton("تغییر درصد تخفیف", callback_data=f"admin_change&discount_percent&{course_id}")],
             [InlineKeyboardButton("تغییر وضعیت تخفیف به ازای اینوایت", callback_data=f"admin_change&discount_percent_per_invite&{course_id}")],
             [InlineKeyboardButton("تغییر نوع محتوا (text, document, photo, video, voice)", callback_data=f"admin_change&content_type&{course_id}")],
             [InlineKeyboardButton("تغییر محتوا", callback_data=f"admin_change&media&{course_id}")],
             [InlineKeyboardButton("تغییر لینک چنل پرایوت", callback_data=f"admin_change&channel_link&{course_id}"),
-            InlineKeyboardButton("تغییر آیدی چنل پرایوت", callback_data=f"admin_change&channel_chat_id&{course_id}")],
+             InlineKeyboardButton("تغییر آیدی چنل پرایوت", callback_data=f"admin_change&channel_chat_id&{course_id}")],
             [InlineKeyboardButton("تغییر وضعیت نمایش (True or False)", callback_data=f"admin_change&status&{course_id}")],
             [InlineKeyboardButton("حذف دوره", callback_data=f"admin_remove_course_{course_id}")],
             [InlineKeyboardButton("برگشت", callback_data="course_list_")]]
@@ -334,7 +339,6 @@ async def admin_remove_course(update, context):
         text = 'در حذف دوره مشکلی وجود داشت'
     keyboard = [[InlineKeyboardButton('برگشت', callback_data='admin')]]
     await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='html')
-
 
 
 @handle_telegram_conversetion_exceptions
@@ -390,6 +394,90 @@ update_course_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(admin_change, pattern=r'admin_change(.*)')],
     states={
         EDIT_COURSE: [MessageHandler(filters.ALL, update_course)],
+    },
+    fallbacks=[],
+    per_chat=True,
+    allow_reentry=True,
+    conversation_timeout=1500,
+)
+
+
+@handle_telegram_conversetion_exceptions
+async def admin_add_discount_code(update, context):
+    chat_id = update.effective_chat.id
+    query = update.callback_query
+    query.answer()
+    text = ("این کد تخفیف برای کدام کاربران است؟"
+            "\nآیدی آن ها را با کاما جدا کرده و بفرستید"
+            "\nاگر میخواهید برای همه فعال باشد 0 را بفرستید.")
+    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='html')
+    return ADD_DISCOUNT_CODE_VALID_FOR_USER
+
+
+@handle_telegram_conversetion_exceptions
+async def get_discount_code_valid_for_user(update, context):
+    chat_id = update.effective_chat.id
+    get_users = update.message.text.replace(' ', '').split(',')
+    context.user_data['discount_users'] = get_users
+    text = ('این کد تا چه زمانی فعال است؟'
+            '\nتاریخ را با این فرمت بفرستید:'
+            '\nyy/mm/dd')
+    await context.bot.send_message(chat_id=chat_id, text=text)
+    return ADD_DISCOUNT_CODE_VALID_UNTIL
+
+
+@handle_telegram_conversetion_exceptions
+async def get_discount_code_valid_until(update, context):
+    chat_id = update.effective_chat.id
+    get_date = update.message.text
+    context.user_data['discount_valid_until'] = get_date
+    text = 'این کد چه مبلغی را کسر میکند؟ به تومان بفرستید.'
+    await context.bot.send_message(chat_id=chat_id, text=text)
+    return ADD_DISCOUNT_CODE_CREDIT
+
+
+@handle_telegram_conversetion_exceptions
+async def get_credit_and_generate(update, context):
+    chat_id = update.effective_chat.id
+    credit = int(update.message.text.replace(',', ''))
+    until_date = context.user_data['discount_valid_until']
+    allow_users = context.user_data['discount_users']
+    generate_code = str(uuid.uuid4())[:8]
+
+    if int(allow_users[0]) == 0 and len(allow_users) == 1:
+        add_code = [(True, True, None, credit, until_date, generate_code)]
+    else:
+        add_code = [(True, False, int(user), credit, until_date, generate_code) for user in allow_users]
+
+    values_template = ', '.join(['(%s, %s, %s, %s, %s, %s)'] * len(add_code))
+    query = f'''
+    INSERT INTO DiscountCode (is_active, available_for_all_user, for_userID, credit, valid_until, code) 
+    VALUES {values_template}
+    RETURNING discountID
+    '''
+    params = [item for sublist in add_code for item in sublist]
+    try:
+        result = database_pool.execute('transaction', [{'query': query, 'params': params}])
+    except psycopg2.errors.DatetimeFieldOverflow:
+        await context.bot.send_message(chat_id=chat_id, text='فرمت تایم درست نیست!', parse_mode='html')
+        return ConversationHandler.END
+
+    if result:
+        text = ('کد تخفیف با موفقیت ساخته شد!'
+                f'\n<code>{generate_code}</code>')
+    else:
+        text = 'مشکلی در ساخت کد تخفیف وجود داشت!'
+
+    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='html')
+    return ConversationHandler.END
+
+
+add_discount_code = ConversationHandler(
+    entry_points=[CallbackQueryHandler(admin_add_discount_code, pattern=r'admin_add_discount_code')],
+    states={
+        ADD_DISCOUNT_CODE_VALID_FOR_USER: [MessageHandler(filters.TEXT, get_discount_code_valid_for_user)],
+        ADD_DISCOUNT_CODE_VALID_UNTIL: [MessageHandler(filters.TEXT, get_discount_code_valid_until)],
+        ADD_DISCOUNT_CODE_CREDIT: [MessageHandler(filters.TEXT, get_credit_and_generate)],
     },
     fallbacks=[],
     per_chat=True,

@@ -1,3 +1,5 @@
+import datetime
+
 import telegram.error
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utilities import (check_join_in_channel, user_manager, handle_error, handle_telegram_conversetion_exceptions,
@@ -7,6 +9,7 @@ from private import minimum_price_allowed_to_charge_wallet, maximum_price_allowe
 from telegram.ext import ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 
 
+GET_DISCOUNT_CODE = 0
 GET_PRICE = 0
 GET_EVIDENCE_CREDIT = 0
 factor_time_in_sec = 600
@@ -57,7 +60,7 @@ async def add_credit_to_wallet(update, context):
 @handle_telegram_conversetion_exceptions
 async def get_price_and_process(update, context):
     chat_id = update.effective_chat.id
-    get_price = int(update.message.text.replace(',', ''))
+    get_price = int(update.message.text.replace(',',''))
 
     if minimum_price_allowed_to_charge_wallet > get_price or get_price > maximum_price_allowed_to_charge_wallet:
         text = ('ورودی نادرست است!'
@@ -75,6 +78,7 @@ async def get_price_and_process(update, context):
     context.user_data['invoice_id'] = invoice_id
 
     keyboard = [[InlineKeyboardButton('کارت به کارت', callback_data=f'pay_by_card_for_credit_{get_price}_{invoice_id}')],
+                [InlineKeyboardButton('اضافه کردن کد تخفیف', callback_data=f'add_discount_code_{get_price}_{invoice_id}')],
                 [InlineKeyboardButton('صفحه اصلی', callback_data='send_main_menu')]]
 
     await context.bot.send_message(chat_id=chat_id, text=f"<b>بسیار خب، لطفا روش پرداخت را انتخاب کنید:\n\nمبلغ: {get_price:,}</b>",
@@ -92,6 +96,89 @@ charge_wallet_handler = ConversationHandler(
     allow_reentry=True,
     conversation_timeout=1500,
 )
+
+
+@handle_telegram_conversetion_exceptions
+async def add_discount_code(update, context):
+    query = update.callback_query
+    query.delete_message()
+    text = 'کد تخفیف خودتون رو وارد کنید'
+    await query.edit_message_text(text=text, parse_mode='html', reply_markup=InlineKeyboardMarkup([]))
+    return GET_DISCOUNT_CODE
+
+
+@handle_telegram_conversetion_exceptions
+async def get_discount_code(update, context):
+    chat_id = int(update.effective_chat.id)
+    get_price = context.user_data['price']
+    invoice_id = context.user_data['invoice_id']
+    discount_code = update.message.text
+
+    get_discount_code_detail = database_pool.execute('query', {'query': f'SELECT is_active,available_for_all_user,for_userID,credit,valid_until,discountID,code FROM DiscountCode WHERE code = %s', 'params': (discount_code,)})
+
+    if not get_discount_code_detail:
+        await context.bot.send_message(chat_id=chat_id,text=f"<b>کد تخفیف وجود ندارد!</b>",parse_mode='html')
+        return ConversationHandler.END
+
+    if not get_discount_code_detail[0][0]:
+        await context.bot.send_message(chat_id=chat_id,text=f"<b>کد تخفیف فعال نیست!</b>",parse_mode='html')
+        return ConversationHandler.END
+
+    if datetime.datetime.now() > get_discount_code_detail[0][4]:
+        await context.bot.send_message(chat_id=chat_id,text=f"<b>کد تخفیف منقضی شده است!</b>",parse_mode='html')
+        return ConversationHandler.END
+
+    discount_credit = get_discount_code_detail[0][3]
+
+    is_user_use_discount = database_pool.execute('query', {
+        'query': f'SELECT usediscountID FROM UseDiscount WHERE discountID = %s AND userID = %s',
+        'params': (get_discount_code_detail[0][5], chat_id)})
+
+    print(get_discount_code_detail)
+
+    if not is_user_use_discount:
+
+        if get_discount_code_detail[0][1]:
+            get_price = max(int(get_price - int(discount_credit)), 0)
+            context.user_data['price'] = get_price
+
+        else:
+            for user in get_discount_code_detail:
+                if user[2] == chat_id and user[6] == discount_code:
+                    get_price = max(int(get_price - int(discount_credit)), 0)
+                    context.user_data['price'] = get_price
+                    break
+
+        database_pool.execute('transaction', [
+            {'query': f'UPDATE Invoice SET amount = %s,discount = %s,discountID = %s WHERE invoiceID = {invoice_id}',
+             'params': (get_price, discount_credit, get_discount_code_detail[0][5])}])
+
+        keyboard = [
+            [InlineKeyboardButton('کارت به کارت', callback_data=f'pay_by_card_for_credit_{get_price}_{invoice_id}')],
+            [InlineKeyboardButton('صفحه اصلی', callback_data='send_main_menu')]]
+
+        await context.bot.send_message(chat_id=chat_id,
+                                       text=f"<b>{discount_credit:,} تومان تخفیف با موفقیت اعمال شد، لطفا روش پرداخت را انتخاب کنید:\n\nمبلغ: {get_price:,}</b>",
+                                       reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='html')
+
+    else:
+        await context.bot.send_message(chat_id=chat_id, text=f"<b>شما قبلا از این کد استفاده کردید!</b>", parse_mode='html')
+
+    return ConversationHandler.END
+
+
+
+add_discount_code_handler = ConversationHandler(
+    entry_points=[CallbackQueryHandler(add_discount_code, pattern=r'add_discount_code_(.*)')],
+    states={
+        GET_DISCOUNT_CODE: [MessageHandler(filters.TEXT, get_discount_code)]
+    },
+    fallbacks=[],
+    per_chat=True,
+    allow_reentry=True,
+    conversation_timeout=1500,
+)
+
 
 
 @handle_telegram_conversetion_exceptions
@@ -157,15 +244,20 @@ credit_charge = ConversationHandler(
 
 @handle_telegram_exceptions_without_user_side
 async def add_credit_to_wallet_func(context, invoice_id):
-    get_invoice = database_pool.execute('query', {'query': f'SELECT userID,amount FROM Invoice WHERE invoiceID = %s', 'params': (invoice_id,)})
+    get_invoice = database_pool.execute('query', {'query': f'SELECT userID,amount,discountID FROM Invoice WHERE invoiceID = %s', 'params': (invoice_id,)})
 
     if get_invoice:
+        if get_invoice[0][2]:
+            database_pool.execute('transaction', [
+                {'query': 'INSERT INTO UseDiscount (discountID, userID) VALUES (%s, %s)',
+                 'params': (get_invoice[0][2], get_invoice[0][0])}])
+
         add_to_wallet = await wallet_manager.add_to_wallet(get_invoice[0][0], get_invoice[0][1])
         if not add_to_wallet:
             raise ValueError(f'problem in add credit to wallet')
         finish_invoice = database_pool.execute('transaction', [{'query': 'UPDATE Invoice SET payment_status = %s, payment_method = %s WHERE invoiceID = %s RETURNING userID,amount',
-                                                                         'params': ("pay", "card_to_card", invoice_id)}])[0]
-        await context.bot.send_message(ADMIN_CHAT_IDs[0], '🟢 WALLET OPERATOIN SUCCESSFULL')
+                                                                'params': ("pay", "card_to_card", invoice_id)}])[0]
+        await context.bot.send_message(ADMIN_CHAT_IDs[0], '🟢 عملیات کیف پول موفقیت آمیز بود')
         return finish_invoice
 
     raise ValueError(f'there is no invoice with {invoice_id} id')
@@ -188,7 +280,7 @@ async def apply_card_pay_credit(update, context):
         invoice_id = int(query.data.replace('ok_card_pay_credit_accept_', ''))
         invoice_detail = await add_credit_to_wallet_func(context, invoice_id)
 
-        await context.bot.send_message(text=f'مبلغ {invoice_detail[0][1]} تومن با موفقیت به کیف پول شما اضافه شد ✅', chat_id=invoice_detail[0][0])
+        await context.bot.send_message(text=f'مبلغ {invoice_detail[0][1]:,} تومن با موفقیت به کیف پول شما اضافه شد ✅', chat_id=invoice_detail[0][0])
         await query.answer('Done ✅')
         await query.delete_message()
 
