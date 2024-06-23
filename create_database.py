@@ -1,11 +1,8 @@
 from posgres_manager import Client
+from private import database_detail
 
 
-a = Client(db_name="my_shop",
-           db_host="localhost",
-           db_user="postgres",
-           db_password="amir1383amir",
-           db_port=2053)
+a = Client(**database_detail)
 
 
 list_of_commands = [
@@ -51,7 +48,7 @@ list_of_commands = [
     usediscountID SERIAL PRIMARY KEY,
     discountID SMALLINT,
     userID BIGINT,
-    code VARCHAR(100) NOT NULL,
+    code VARCHAR(100),
     registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_user FOREIGN KEY (userID) REFERENCES UserDetail(UserID) ON DELETE CASCADE,
     CONSTRAINT fk_discount FOREIGN KEY (discountID) REFERENCES DiscountCode(discountID) ON DELETE CASCADE
@@ -75,7 +72,7 @@ list_of_commands = [
     referral_requirement INT DEFAULT 0,
     discount_percent_per_invite INT DEFAULT 0,
     price BIGINT CHECK (price >= discount_percent),
-    discount_percent SMALLINT DEFAULT 0 CHECK (discount_percent >= 0) CHECK (discount_percent < 100),
+    discount_percent SMALLINT DEFAULT 0 CHECK (discount_percent >= 0) CHECK (discount_percent <= 100),
     is_free BOOLEAN DEFAULT FALSE,
     creation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

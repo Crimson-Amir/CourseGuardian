@@ -57,7 +57,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         refral_link = context.args[0] if context.args else None
         create_new_user = await user_manager.execute(RegisterUser, user_detail=user_detail, referral_link=refral_link)
         await send_main_menu(update, context)
-        await context.bot.send_message(ADMIN_CHAT_IDs[0], f'New Start Bot.\n{create_new_user}')
+        await context.bot.send_message(ADMIN_CHAT_IDs[0], f'New Start Bot in {update.message.chat.type}.'
+                                                          f'\n\nFirst name: {user_detail.first_name}'
+                                                          f'\nLast name: {user_detail.last_name}'
+                                                          f'\nUserName: {user_detail.username}'
+                                                          f'\nChat_id: <a href=\"tg://user?id={user_detail.id}\">{user_detail.id}</a>'
+                                                          f'\nEntered With Refferal Link: <a href=\"tg://user?id={create_new_user[0][0][7] or "No"}\">{create_new_user[0][0][7] or "No"}</a>',
+                                       parse_mode='html')
 
 
 @check_join_in_channel

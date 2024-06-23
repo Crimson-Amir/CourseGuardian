@@ -114,7 +114,12 @@ async def get_discount_code(update, context):
     invoice_id = context.user_data['invoice_id']
     discount_code = update.message.text
 
-    get_discount_code_detail = database_pool.execute('query', {'query': f'SELECT is_active,available_for_all_user,for_userID,credit,valid_until,discountID,code FROM DiscountCode WHERE code = %s', 'params': (discount_code,)})
+    get_discount_code_detail = database_pool.execute(
+        'query',
+        {'query':
+             f'SELECT is_active,available_for_all_user,for_userID,credit,valid_until,discountID,code FROM DiscountCode WHERE code = %s AND (for_userID = %s OR available_for_all_user = %s)',
+         'params': (discount_code,chat_id, True)
+         })
 
     if not get_discount_code_detail:
         await context.bot.send_message(chat_id=chat_id,text=f"<b>کد تخفیف وجود ندارد!</b>",parse_mode='html')
